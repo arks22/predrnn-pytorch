@@ -17,13 +17,11 @@ This repo also includes the implementation of **PredRNN-V2** [[paper](https://ar
 
 We find that the pair of memory cells in PredRNN contain undesirable, redundant features, and thus present a memory decoupling loss to encourage them to learn modular structures of visual dynamics. 
 
-![decouple](./pic/decouple.png)
 
 #### 2. Reverse Scheduled Sampling
 
 Reverse scheduled sampling is a new curriculum learning strategy for seq-to-seq RNNs. As opposed to scheduled sampling, it gradually changes the training process of the PredRNN encoder from using the previously generated frame to using the previous ground truth. **Benefit:** It forces the model to learn long-term dynamics from context frames. 
 
-[comment]: <![rss](./pic/rss.png)>
 
 #### 3. Action-Conditioned Video Prediction
 
@@ -31,29 +29,16 @@ We further extend PredRNN to action-conditioned video prediction. By fusing the 
 
 We show quantitative results on the BAIR robot pushing dataset for predicting 28 future frames from 2 observations.
 
-![action](./pic/action_based.png)
 
 ## Showcases
 
 Moving MNIST
 
-![mnist](./pic/mnist.png)
 
-KTH
 
-![kth](./pic/kth.png)
-
-BAIR (We zoom in on the area in the red box)
-
-![bair](./pic/bair.png)
-
-Traffic4Cast
-
-![Traffic4Cast](./pic/Traffic4Cast.png)
 
 Radar echoes
 
-![radar](./pic/radar.png)
 
 ## Quantitative results on Moving MNIST and KTH in LPIPS
 
@@ -76,7 +61,6 @@ LPIPS is more sensitive to perceptual human judgments, the lower the better.
 
 [comment]:<Frame-wise SSIM and PSNR for the predicted future 28 frames.>
 
-[comment]:<![bair_res](./pic/BAIR_results.png)>
 
 
 ## Get Started
