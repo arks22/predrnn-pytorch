@@ -1,5 +1,3 @@
-__author__ = 'yunbo'
-
 import torch
 import torch.nn as nn
 from core.layers.SpatioTemporalLSTMCell_v2 import SpatioTemporalLSTMCell
@@ -67,7 +65,7 @@ class RNN(nn.Module):
 
         for t in range(self.configs.total_length - 1):
 
-            if self.configs.reverse_scheduled_sampling == 1:
+            if self.configs.reverse_scheduled_sampling:
                 # reverse schedule sampling
                 if t == 0:
                     net = frames[:, t]

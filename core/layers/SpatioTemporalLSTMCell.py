@@ -1,5 +1,3 @@
-__author__ = 'yunbo'
-
 import torch
 import torch.nn as nn
 

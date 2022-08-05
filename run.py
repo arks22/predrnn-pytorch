@@ -1,5 +1,3 @@
-__author__ = 'yunbo'
-
 import os
 import shutil
 import argparse
@@ -9,70 +7,82 @@ from core.data_provider import datasets_factory
 from core.models.model_factory import Model
 from core.utils import preprocess
 import core.trainer as trainer
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import time
+import datetime
+
+dt_now = datetime.datetime.now()
+TIMESTAMP = dt_now.strftime('%Y%m%d%H%M')
 
 # -----------------------------------------------------------------------------
-parser = argparse.ArgumentParser(description='PyTorch video prediction model - PredRNN')
-
+parser = argparse.ArgumentParser(description='PredRNN')
 # training/test
-parser.add_argument('--is_training', type=int, default=1)
-parser.add_argument('--device', type=str, default='cpu:0')
-
+parser.add_argument('--is_training', type=bool, default=True)
+parser.add_argument('--device', type=str)
 # data
-parser.add_argument('--dataset_name', type=str, default='mnist')
-parser.add_argument('--train_data_paths', type=str, default='data/moving-mnist-example/moving-mnist-train.npz')
-parser.add_argument('--valid_data_paths', type=str, default='data/moving-mnist-example/moving-mnist-valid.npz')
-parser.add_argument('--save_dir', type=str, default='checkpoints/mnist_predrnn')
-parser.add_argument('--gen_frm_dir', type=str, default='results/mnist_predrnn')
-parser.add_argument('--input_length', type=int, default=10)
-parser.add_argument('--total_length', type=int, default=20)
-parser.add_argument('--img_width', type=int, default=64)
-parser.add_argument('--img_channel', type=int, default=1)
-
+parser.add_argument('--dataset', type=str)
+parser.add_argument('--config', type=str)
+parser.add_argument('--data_train_path', type=str)
+parser.add_argument('--data_test_path', type=str)
+parser.add_argument('--save_dir', type=str)
+parser.add_argument('--gen_frm_dir', type=str)
+parser.add_argument('--input_length', type=int)
+parser.add_argument('--total_length', type=int)
+parser.add_argument('--img_width', type=int)
+parser.add_argument('--img_height', type=int)
+parser.add_argument('--img_channel', type=int)
 # model
-parser.add_argument('--model_name', type=str, default='predrnn')
-parser.add_argument('--pretrained_model', type=str, default='')
-parser.add_argument('--num_hidden', type=str, default='64,64,64,64')
-parser.add_argument('--filter_size', type=int, default=5)
-parser.add_argument('--stride', type=int, default=1)
-parser.add_argument('--patch_size', type=int, default=4)
-parser.add_argument('--layer_norm', type=int, default=1)
-parser.add_argument('--decouple_beta', type=float, default=0.1)
-
+parser.add_argument('--model_name', type=str)
+parser.add_argument('--pretrained_model', type=str)
+parser.add_argument('--num_hidden', type=str)
+parser.add_argument('--filter_size', type=int)
+parser.add_argument('--stride', type=int)
+parser.add_argument('--patch_size', type=int)
+parser.add_argument('--layer_norm', type=int)
+parser.add_argument('--decouple_beta', type=float)
 # reverse scheduled sampling
-parser.add_argument('--reverse_scheduled_sampling', type=int, default=0)
-parser.add_argument('--r_sampling_step_1', type=float, default=25000)
-parser.add_argument('--r_sampling_step_2', type=int, default=50000)
-parser.add_argument('--r_exp_alpha', type=int, default=5000)
+parser.add_argument('--reverse_scheduled_sampling', type=bool)
+parser.add_argument('--r_sampling_step_1', type=float)
+parser.add_argument('--r_sampling_step_2', type=int)
+parser.add_argument('--r_exp_alpha', type=int)
 # scheduled sampling
-parser.add_argument('--scheduled_sampling', type=int, default=1)
-parser.add_argument('--sampling_stop_iter', type=int, default=50000)
-parser.add_argument('--sampling_start_value', type=float, default=1.0)
-parser.add_argument('--sampling_changing_rate', type=float, default=0.00002)
-
+parser.add_argument('--scheduled_sampling', type=bool)
+parser.add_argument('--sampling_stop_iter', type=int)
+parser.add_argument('--sampling_start_value', type=float)
+parser.add_argument('--sampling_changing_rate', type=float)
 # optimization
-parser.add_argument('--lr', type=float, default=0.001)
-parser.add_argument('--reverse_input', type=int, default=1)
-parser.add_argument('--batch_size', type=int, default=8)
-parser.add_argument('--max_iterations', type=int, default=80000)
-parser.add_argument('--display_interval', type=int, default=100)
-parser.add_argument('--test_interval', type=int, default=5000)
-parser.add_argument('--snapshot_interval', type=int, default=5000)
-parser.add_argument('--num_save_samples', type=int, default=10)
-parser.add_argument('--n_gpu', type=int, default=1)
-
+parser.add_argument('--lr', type=float)
+parser.add_argument('--reverse_input', type=bool)
+parser.add_argument('--batch_size', type=int)
+parser.add_argument('--max_epoches', type=int)
+parser.add_argument('--num_save_samples', type=int)
+parser.add_argument('--num_valid_samples',      type=int)
+parser.add_argument('--n_gpu', type=int)
 # visualization of memory decoupling
-parser.add_argument('--visual', type=int, default=0)
-parser.add_argument('--visual_path', type=str, default='./decoupling_visual')
-
+parser.add_argument('--visual', type=int)
+parser.add_argument('--visual_path', type=str)
 # action-based predrnn
-parser.add_argument('--injection_action', type=str, default='concat')
-parser.add_argument('--conv_on_input', type=int, default=0, help='conv on input')
-parser.add_argument('--res_on_conv', type=int, default=0, help='res on conv')
-parser.add_argument('--num_action_ch', type=int, default=4, help='num action ch')
-
+parser.add_argument('--injection_action', type=str)
+parser.add_argument('--conv_on_input', type=int)
+parser.add_argument('--res_on_conv', type=int)
+parser.add_argument('--num_action_ch', type=int)
 args = parser.parse_args()
-print(args)
 
+if args.config == 'mnist':
+    from configs.mnist_configs import configs
+elif args.config == 'kitti':
+    from configs.kitti_configs import configs
+elif args.config == 'town':
+    from configs.town_configs import configs
+elif args.config == 'aia211':
+    from configs.aia211_configs import configs
+args = configs(args)
+
+print('---------------------------------------------')
+print('Dataset       :', args.dataset)
+print('Configuration :', args.config)
+print('---------------------------------------------')
 
 def reserve_schedule_sampling_exp(itr):
     if itr < args.r_sampling_step_1:
@@ -97,10 +107,10 @@ def reserve_schedule_sampling_exp(itr):
         (args.batch_size, args.total_length - args.input_length - 1))
     true_token = (random_flip < eta)
 
-    ones = np.ones((args.img_width // args.patch_size,
+    ones = np.ones((args.img_height // args.patch_size,
                     args.img_width // args.patch_size,
                     args.patch_size ** 2 * args.img_channel))
-    zeros = np.zeros((args.img_width // args.patch_size,
+    zeros = np.zeros((args.img_height // args.patch_size,
                       args.img_width // args.patch_size,
                       args.patch_size ** 2 * args.img_channel))
 
@@ -122,7 +132,7 @@ def reserve_schedule_sampling_exp(itr):
     real_input_flag = np.reshape(real_input_flag,
                                  (args.batch_size,
                                   args.total_length - 2,
-                                  args.img_width // args.patch_size,
+                                  args.img_height // args.patch_size,
                                   args.img_width // args.patch_size,
                                   args.patch_size ** 2 * args.img_channel))
     return real_input_flag
@@ -131,9 +141,10 @@ def reserve_schedule_sampling_exp(itr):
 def schedule_sampling(eta, itr):
     zeros = np.zeros((args.batch_size,
                       args.total_length - args.input_length - 1,
-                      args.img_width // args.patch_size,
+                      args.img_height // args.patch_size,
                       args.img_width // args.patch_size,
                       args.patch_size ** 2 * args.img_channel))
+
     if not args.scheduled_sampling:
         return 0.0, zeros
 
@@ -141,13 +152,13 @@ def schedule_sampling(eta, itr):
         eta -= args.sampling_changing_rate
     else:
         eta = 0.0
-    random_flip = np.random.random_sample(
-        (args.batch_size, args.total_length - args.input_length - 1))
+
+    random_flip = np.random.random_sample((args.batch_size, args.total_length - args.input_length - 1))
     true_token = (random_flip < eta)
-    ones = np.ones((args.img_width // args.patch_size,
+    ones = np.ones((args.img_height // args.patch_size,
                     args.img_width // args.patch_size,
                     args.patch_size ** 2 * args.img_channel))
-    zeros = np.zeros((args.img_width // args.patch_size,
+    zeros = np.zeros((args.img_height // args.patch_size,
                       args.img_width // args.patch_size,
                       args.patch_size ** 2 * args.img_channel))
     real_input_flag = []
@@ -161,65 +172,129 @@ def schedule_sampling(eta, itr):
     real_input_flag = np.reshape(real_input_flag,
                                  (args.batch_size,
                                   args.total_length - args.input_length - 1,
-                                  args.img_width // args.patch_size,
+                                  args.img_height // args.patch_size,
                                   args.img_width // args.patch_size,
                                   args.patch_size ** 2 * args.img_channel))
     return eta, real_input_flag
 
 
+def plot_loss(indices, finish_time):
+    fig = plt.figure(figsize=(13, 9))
+    gs = fig.add_gridspec(3,3)
+    ax = []
+    ax.append(fig.add_subplot(gs[0, 0:2],fc='gray', xlim=(0,10),ylim=(0,10)))
+    ax.append(fig.add_subplot(gs[1, 0]))
+    ax.append(fig.add_subplot(gs[1, 1]))
+    ax.append(fig.add_subplot(gs[2, 1]))
+    ax.append(fig.add_subplot(gs[1, 2]))
+    ax.append(fig.add_subplot(gs[2, 2]))
+
+    ax[1].plot(indices[0].flatten(), color='r', lw=0.75, label='train loss')
+    ax[3].plot(indices[1].flatten(), color='g', lw=0.75, label='valid mse')
+    ax[4].plot(indices[2].flatten(), color='y', lw=0.75, label='valid psnr')
+    ax[5].plot(indices[3].flatten(), color='m', lw=0.75, label='valid ssim')
+    ax[6].plot(indices[4].flatten(), color='c', lw=0.75, label='valid lpips')
+
+    for i in range(len(ax)):
+        ax[i].grid()
+        ax[i].legend()
+
+    ax[0].xaxis.set_major_locator(mpl.ticker.NullLocator())
+    ax[0].yaxis.set_major_locator(mpl.ticker.NullLocator())
+    ax[0].text(1,9,"PredRNN " + str(TIMESTAMP))
+    ax[0].text(1,8,"---------------------")
+    ax[0].text(1,7,"Dataset " + str(args.dataset))
+    ax[0].text(1,6,"Batch size: " + str(args.batch_size))
+    ax[0].text(1,5,"Epoch: " + str(args.max_epoches))
+    time = '- ' if finish_time == 0 else str(finish_time)
+    ax[0].text(1,4,"Time: " + time + 'h')
+
+    fig.patch.set_alpha(0)
+    fig.tight_layout()
+    fig_path = os.path.join(args.gen_frm_dir, TIMESTAMP, 'losses.png')
+    fig.savefig(fig_path, format="png", dpi=200)
+
+
 def train_wrapper(model):
     if args.pretrained_model:
         model.load(args.pretrained_model)
-    # load data
-    train_input_handle, test_input_handle = datasets_factory.data_provider(
-        args.dataset_name, args.train_data_paths, args.valid_data_paths, args.batch_size, args.img_width,
-        seq_length=args.total_length, injection_action=args.injection_action, is_training=True)
+
+    train_input_handle = datasets_factory.data_provider(configs=args,
+                                                        data_train_path=args.data_train_path,
+                                                        dataset=args.dataset,
+                                                        data_test_path=args.data_test_path,
+                                                        batch_size=args.batch_size,
+                                                        is_training=True,
+                                                        is_shuffle=True)
+    test_input_handle = datasets_factory.data_provider(configs=args,
+                                                      data_train_path=args.data_train_path,
+                                                      dataset=args.dataset,
+                                                      data_test_path=args.data_test_path,
+                                                      batch_size=args.batch_size,
+                                                      is_training=False,
+                                                      is_shuffle=False)
 
     eta = args.sampling_start_value
+    itr = 0
+    indices = np.zeros((5,args.max_epoches))
+    time_train_start = time.time() 
 
-    for itr in range(1, args.max_iterations + 1):
-        if train_input_handle.no_batch_left():
-            train_input_handle.begin(do_shuffle=True)
-        ims = train_input_handle.get_batch()
-        ims = preprocess.reshape_patch(ims, args.patch_size)
+    for epoch in range(1, args.max_epoches + 1):
+        print("------------- epoch: " + str(epoch) + " / " + str(args.max_epoches) + " ----------------")
+        print("Train with " + str(len(train_input_handle)) + " data")
+        time_epoch_start = time.time() 
 
-        if args.reverse_scheduled_sampling == 1:
-            real_input_flag = reserve_schedule_sampling_exp(itr)
-        else:
-            eta, real_input_flag = schedule_sampling(eta, itr)
+        for ims in train_input_handle:
+            time_itr_start = time.time() 
+            batch_size = ims.shape[0]
 
-        trainer.train(model, ims, real_input_flag, args, itr)
+            if args.reverse_scheduled_sampling:
+                real_input_flag = reserve_schedule_sampling_exp(itr)
+            else:
+                eta, real_input_flag = schedule_sampling(eta, itr)
+            loss = trainer.train(model, ims, real_input_flag, args, itr)
 
-        if itr % args.snapshot_interval == 0:
-            model.save(itr)
+            time_itr = round(time.time() - time_itr_start, 3)
+            print('\ritr:' + str(itr) + ' ' + str(time_itr).ljust(5,'0') + 's | Loss: ' + str(loss), end='')
+            itr += 1
 
-        if itr % args.test_interval == 0:
-            trainer.test(model, test_input_handle, args, itr)
+        test_indices = trainer.test(model, test_input_handle, args, itr, TIMESTAMP, True)
+        indices[:, epoch-1] = tuple([loss]) + test_indices
+        plot_loss(indices,0)
+        model.save(TIMESTAMP,itr)
+        time_epoch = round((time.time() - time_epoch_start) / 60, 3)
+        pred_finish_time = time_epoch * (args.max_epoches - epoch) / 60
+        print(str(time_epoch) + 'm/epoch | ETA: ' + str(round(pred_finish_time,2)) + 'h')
 
-        train_input_handle.next()
+    train_finish_time = round((time.time() - time_train_start) / 3600,2)
+    trainer.test(model, test_input_handle, args, itr, TIMESTAMP, False)
+    plot_loss(indices,train_finish_time)
 
 
 def test_wrapper(model):
     model.load(args.pretrained_model)
-    test_input_handle = datasets_factory.data_provider(
-        args.dataset_name, args.train_data_paths, args.valid_data_paths, args.batch_size, args.img_width,
-        seq_length=args.total_length, injection_action=args.injection_action, is_training=False)
-    trainer.test(model, test_input_handle, args, 'test_result')
+    test_input_handle = datasets_factory.data_provider(configs=args,
+                                                       data_train_path=args.data_train_path,
+                                                       dataset=args.dataset,
+                                                       data_test_path=args.data_test_path,
+                                                       batch_size=args.batch_size,
+                                                       is_training=False,
+                                                       is_shuffle=False)
+    trainer.test(model, test_input_handle, args, itr, TIMESTAMP, False)
 
 
-if os.path.exists(args.save_dir):
-    shutil.rmtree(args.save_dir)
-os.makedirs(args.save_dir)
+if __name__ == '__main__':
+    print(args.model_name)
+    print('Initializing models')
+    model = Model(args)
 
-if os.path.exists(args.gen_frm_dir):
-    shutil.rmtree(args.gen_frm_dir)
-os.makedirs(args.gen_frm_dir)
+    gen_path = os.path.join(args.gen_frm_dir, TIMESTAMP)
+    if not os.path.exists(gen_path): os.mkdir(gen_path)
 
-print('Initializing models')
-
-model = Model(args)
-
-if args.is_training:
-    train_wrapper(model)
-else:
-    test_wrapper(model)
+    if args.is_training:
+        save_path = os.path.join(args.save_dir, TIMESTAMP)
+        if not os.path.exists(save_path): os.mkdir(save_path)
+        print('save results : ' + str(TIMESTAMP))
+        train_wrapper(model)
+    else:
+        test_wrapper(model)

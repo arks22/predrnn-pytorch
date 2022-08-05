@@ -22,7 +22,7 @@ class ToTensor(object):
         return torch.from_numpy(video_x).float()
 
 
-class mnist(Dataset):
+class aia211(Dataset):
     def __init__(self, configs, data_train_path, data_test_path, mode, transform=None):
         self.transform = transform
         self.mode = mode

@@ -2,31 +2,36 @@ import os.path
 import datetime
 import cv2
 import numpy as np
-from skimage.measure import compare_ssim
+from skimage.metrics import structural_similarity as compare_ssim
 from core.utils import preprocess, metrics
 import lpips
 import torch
-
-loss_fn_alex = lpips.LPIPS(net='alex')
+import time
+import math
+import datetime
 
 
 def train(model, ims, real_input_flag, configs, itr):
-    cost = model.train(ims, real_input_flag)
+    loss = model.train(ims, real_input_flag)
+
     if configs.reverse_input:
+        ims = ims.to('cpu').detach().numpy().copy()
         ims_rev = np.flip(ims, axis=1).copy()
-        cost += model.train(ims_rev, real_input_flag)
-        cost = cost / 2
-
-    if itr % configs.display_interval == 0:
-        print(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'itr: ' + str(itr))
-        print('training loss: ' + str(cost))
+        loss += model.train(ims_rev, real_input_flag)
+        loss = loss / 2
+    return loss
 
 
-def test(model, test_input_handle, configs, itr):
-    print(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'test...')
-    test_input_handle.begin(do_shuffle=False)
-    res_path = os.path.join(configs.gen_frm_dir, str(itr))
-    os.mkdir(res_path)
+def test(model, test_input_handle, configs, itr, timestamp,is_valid):
+    if is_valid:
+        print('\nValid with ' + str(configs.num_valid_samples) + ' data')
+    else:
+        print('\nTest with ' + str(len(test_input_handle)) + ' data')
+
+    loss_fn_alex = lpips.LPIPS(net='alex')
+    res_path = os.path.join(configs.gen_frm_dir, timestamp, str(itr))
+    if not os.path.exists(res_path): os.mkdir(res_path)
+
     avg_mse = 0
     batch_id = 0
     img_mse, ssim, psnr = [], [], []
@@ -54,16 +59,27 @@ def test(model, test_input_handle, configs, itr):
     if configs.reverse_scheduled_sampling == 1:
         real_input_flag[:, :configs.input_length - 1, :, :] = 1.0
 
-    while (test_input_handle.no_batch_left() == False):
-        batch_id = batch_id + 1
-        test_ims = test_input_handle.get_batch()
-        test_dat = preprocess.reshape_patch(test_ims, configs.patch_size)
-        test_ims = test_ims[:, :, :, :, :configs.img_channel]
-        img_gen = model.test(test_dat, real_input_flag)
+    for data in test_input_handle:
+        if is_valid and configs.num_valid_samples < batch_id: break;
+        print('\ritr:' + str(batch_id),end='')
 
+        batch_id = batch_id + 1
+        batch_size = data.shape[0]
+        real_input_flag = np.zeros(
+            (configs.batch_size,
+            configs.total_length - mask_input - 1,
+            configs.img_width // configs.patch_size,
+            configs.img_width // configs.patch_size,
+            configs.patch_size ** 2 * configs.img_channel))
+        img_gen = model.test(data, real_input_flag)
+        #############################
+        img_gen = img_gen.transpose(0, 1, 3, 4, 2)  # * 0.5 + 0.5
+        test_ims = data.detach().cpu().numpy().transpose(0, 1, 3, 4, 2)  # * 0.5 + 0.5
+        output_length = configs.total_length - configs.input_length
+        output_length = min(output_length, configs.total_length - 1)
+        test_ims = preprocess.reshape_patch_back(test_ims, configs.patch_size)
         img_gen = preprocess.reshape_patch_back(img_gen, configs.patch_size)
-        output_length = configs.total_length - configs.input_length 
-        img_out = img_gen[:, -output_length:]
+        img_out = img_gen[:, -output_length:, :]
 
         # MSE per frame
         for i in range(output_length):
@@ -101,46 +117,85 @@ def test(model, test_input_handle, configs, itr):
             real_frm = np.uint8(x * 255)
             pred_frm = np.uint8(gx * 255)
 
-            psnr[i] += metrics.batch_psnr(pred_frm, real_frm)
+            #psnr[i] += metrics.batch_psnr(pred_frm, real_frm)
+            p = 0
+            for sample_id in range(batch_size):
+                mse_tmp = np.square(x[sample_id, :] - gx[sample_id, :]).mean()
+                p += 10 * np.log10(1 / (mse_tmp + 1e-5))
+            p /= (batch_size)
+            psnr[i] += p
+
             for b in range(configs.batch_size):
-                score, _ = compare_ssim(pred_frm[b], real_frm[b], full=True, multichannel=True)
+                score, _ = compare_ssim(pred_frm[b], real_frm[b], full=True, channel_axis=-1)
                 ssim[i] += score
 
-        # save prediction examples
+        #Save as many prediction samples as 'num_save_samples'
         if batch_id <= configs.num_save_samples:
-            path = os.path.join(res_path, str(batch_id))
-            os.mkdir(path)
-            for i in range(configs.total_length):
-                name = 'gt' + str(i + 1) + '.png'
-                file_name = os.path.join(path, name)
-                img_gt = np.uint8(test_ims[0, i, :, :, :] * 255)
-                cv2.imwrite(file_name, img_gt)
-            for i in range(output_length):
-                name = 'pd' + str(i + 1 + configs.input_length) + '.png'
-                file_name = os.path.join(path, name)
-                img_pd = img_out[0, i, :, :, :]
-                img_pd = np.maximum(img_pd, 0)
-                img_pd = np.minimum(img_pd, 1)
-                img_pd = np.uint8(img_pd * 255)
-                cv2.imwrite(file_name, img_pd)
-        test_input_handle.next()
+            res_width = configs.img_width
+            res_height = configs.img_height
+            img = np.ones((2 * res_height, configs.total_length * res_width, configs.img_channel))
+            img_name = os.path.join(res_path, str(batch_id) + '.png')
 
+            vid_arr = np.ones((res_height, res_width*2, configs.img_channel, configs.total_length))
+            vid_name = os.path.join(res_path, str(batch_id) + '.mp4')
+            fourcc = cv2.VideoWriter_fourcc('m','p','4', 'v')
+            video  = cv2.VideoWriter(vid_name, fourcc, 1.00, (res_width*2+1, res_height+1))
+            #なぜかFPS2.00が選べない。なぜ？
+            for i in range(configs.total_length):
+                img[:res_height, i * res_width:(i + 1) * res_width, :] = test_ims[0, i, :,:,:]
+                vid_arr[:res_height, :res_width, :, i] = test_ims[0, i, :,:,:]
+
+            for i in range(output_length):
+                img[res_height:, (configs.input_length + i) * res_width:(configs.input_length + i + 1) * res_width, :] = img_out[0, -output_length + i, :]
+                vid_arr[:res_height, res_width:, : ,configs.input_length + i] = img_out[0, -output_length + i, :, :, :]
+
+            for i in range(configs.total_length):
+                frame = vid_arr[:,:,:,i]
+                frame = np.maximum(frame, 0)
+                frame = np.minimum(frame, 1)
+                frame = np.repeat(frame, 3).reshape(res_height,res_width*2,3)
+                video.write((frame * 255).astype(np.uint8))
+            video.release()
+
+            img = np.maximum(img, 0)
+            img = np.minimum(img, 1)
+            cv2.imwrite(img_name, (img * 255).astype(np.uint8))
+
+    print('')
     avg_mse = avg_mse / (batch_id * configs.batch_size)
-    print('mse per seq: ' + str(avg_mse))
+    avg_mse_per_frame = avg_mse / (configs.total_length - configs.input_length)
+    print('----------------------------------------------------------------------------------------------------')
+    print('|    1    |    2    |    3    |    4    |    5    |    6    |    7    |    8    |    9    |    10   |')
+    print('| -- *MSE  per frame: ' + str(avg_mse_per_frame) + ' ---------------------------------------------')
     for i in range(configs.total_length - configs.input_length):
-        print(img_mse[i] / (batch_id * configs.batch_size))
+        stage_mse = img_mse[i] / (batch_id * configs.batch_size)
+        digits = math.floor(math.log10(stage_mse))
+        print('|  ' + str(round(stage_mse, 4 - digits)).ljust(6,'0') + ' ', end='')
+    print('|')
+
+    avg_psnr = np.mean(psnr)
+    psnr = np.asarray(psnr, dtype=np.float32) / batch_id
+    print('| -- *PSNR  per frame: ' + str(avg_psnr) + ' ----------------------------------------------------------')
+    for i in range(configs.total_length - configs.input_length):
+        digits = math.floor(math.log10(psnr[i]))
+        print('|  ' + str(round(psnr[i], 4 - digits)).ljust(6,'0') + ' ', end='')
+    print('|')
 
     ssim = np.asarray(ssim, dtype=np.float32) / (configs.batch_size * batch_id)
-    print('ssim per frame: ' + str(np.mean(ssim)))
+    avg_ssim = np.mean(ssim)
+    print('| -- *SSIM per frame: ' + str(avg_ssim) + ' -------------------------------------------------------------')
     for i in range(configs.total_length - configs.input_length):
-        print(ssim[i])
-
-    psnr = np.asarray(psnr, dtype=np.float32) / batch_id
-    print('psnr per frame: ' + str(np.mean(psnr)))
-    for i in range(configs.total_length - configs.input_length):
-        print(psnr[i])
+       print('| ' + str(round(ssim[i], 5)).ljust(7,'0') + ' ', end='')
+    print('|')
 
     lp = np.asarray(lp, dtype=np.float32) / batch_id
-    print('lpips per frame: ' + str(np.mean(lp)))
+    avg_lp = np.mean(lp)
+    print('| -- *LPIPS per frame: ' + str(avg_lp) + ' ---------------------------------------------------------')
     for i in range(configs.total_length - configs.input_length):
-        print(lp[i])
+        stage_lp = lp[i] / batch_id
+        digits = math.floor(math.log10(stage_lp))
+        print('| ' + str(round(stage_lp, 3 - digits)).ljust(6,'0') + ' ', end='')
+    print('|')
+    print('----------------------------------------------------------------------------------------------------')
+
+    return avg_mse_per_frame, avg_psnr, avg_ssim, avg_lp

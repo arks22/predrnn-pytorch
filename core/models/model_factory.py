@@ -23,10 +23,10 @@ class Model(object):
 
         self.optimizer = Adam(self.network.parameters(), lr=configs.lr)
 
-    def save(self, itr):
+    def save(self, timestamp, itr):
         stats = {}
         stats['net_param'] = self.network.state_dict()
-        checkpoint_path = os.path.join(self.configs.save_dir, 'model.ckpt'+'-'+str(itr))
+        checkpoint_path = os.path.join(self.configs.save_dir, timestamp, 'model.ckpt'+'-'+str(itr))
         torch.save(stats, checkpoint_path)
         print("save model to %s" % checkpoint_path)
 
@@ -39,12 +39,17 @@ class Model(object):
         frames_tensor = torch.FloatTensor(frames).to(self.configs.device)
         mask_tensor = torch.FloatTensor(mask).to(self.configs.device)
         self.optimizer.zero_grad()
+        """
+        print('model_fac frame',frames_tensor.shap.shapee)
+        print('model_fac mask',mask_tensor.shape)
+        """
         next_frames, loss = self.network(frames_tensor, mask_tensor)
         loss.backward()
         self.optimizer.step()
         return loss.detach().cpu().numpy()
 
     def test(self, frames, mask):
+        self.network.eval()
         frames_tensor = torch.FloatTensor(frames).to(self.configs.device)
         mask_tensor = torch.FloatTensor(mask).to(self.configs.device)
         next_frames, _ = self.network(frames_tensor, mask_tensor)

@@ -2,6 +2,8 @@ from __future__ import print_function, division
 import torch
 from torch.utils.data import Dataset
 import numpy as np
+import cv2
+import codecs
 from core.utils import preprocess
 
 class Norm(object):
@@ -22,7 +24,7 @@ class ToTensor(object):
         return torch.from_numpy(video_x).float()
 
 
-class mnist(Dataset):
+class hmic(Dataset):
     def __init__(self, configs, data_train_path, data_test_path, mode, transform=None):
         self.transform = transform
         self.mode = mode
@@ -31,25 +33,37 @@ class mnist(Dataset):
         self.img_width = configs.img_width
         self.img_height = configs.img_height
         self.img_channel = configs.img_channel
+
         if self.mode == 'train':
             print('Loading train dataset')
             self.path = data_train_path
             self.data = np.load(self.path)
-            print('{} data * {} frames * {} px * {} px * {} channel'.format(self.data.shape[1], self.data.shape[0], self.data.shape[2], self.data.shape[3], self.data.shape[4] ))
+            print('Loading train dataset finished, with size:', self.data.shape[1])
         else:
             print('Loading test dataset')
             self.path = data_test_path
             self.data = np.load(self.path)
-            print('{} data * {} frames * {} px * {} px * {} channel'.format(self.data.shape[1], self.data.shape[0], self.data.shape[2], self.data.shape[3], self.data.shape[4] ))
+            print('Loading test dataset finished, with size:', self.data.shape[1])
 
     def __len__(self):
         return self.data.shape[1]
 
     def __getitem__(self, idx):
-        #print(self.index[3])
         sample = self.data[:, idx, :]
 
         if self.transform:
             sample = preprocess.reshape_patch(sample, self.patch_size)
             sample = self.transform(sample)
+
         return sample
+
+    def judgeRegularImage(img):
+        check_slice = np.arange(64,448,16)
+
+        for slc in check_slice:
+            if np.all(img[:,slc,:]==0):
+                print("error image")
+                return False #Error
+
+        return True  #regular
+
