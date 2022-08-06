@@ -1,14 +1,12 @@
 import os.path
-import datetime
 import cv2
+import math
 import numpy as np
 from skimage.metrics import structural_similarity as compare_ssim
-from core.utils import preprocess, metrics
 import lpips
+from core.utils import preprocess, metrics
 import torch
 import time
-import math
-import datetime
 
 
 def train(model, ims, real_input_flag, configs, itr):
@@ -28,7 +26,7 @@ def test(model, test_input_handle, configs, itr, timestamp,is_valid):
     else:
         print('\nTest with ' + str(len(test_input_handle)) + ' data')
 
-    loss_fn_alex = lpips.LPIPS(net='alex')
+    loss_fn_lpips = lpips.LPIPS(net='alex', spatial=True).to(configs.device)
     res_path = os.path.join(configs.gen_frm_dir, timestamp, str(itr))
     if not os.path.exists(res_path): os.mkdir(res_path)
 
@@ -111,7 +109,7 @@ def test(model, test_input_handle, configs, itr, timestamp,is_valid):
                 img_gx[:, 1, :, :] = gx[:, :, :, 0]
                 img_gx[:, 2, :, :] = gx[:, :, :, 0]
             img_gx = torch.FloatTensor(img_gx)
-            lp_loss = loss_fn_alex(img_x, img_gx)
+            lp_loss = loss_fn_lpips.forward(img_x, img_gx)
             lp[i] += torch.mean(lp_loss).item()
 
             real_frm = np.uint8(x * 255)

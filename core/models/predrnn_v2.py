@@ -36,7 +36,7 @@ class RNN(nn.Module):
 
     def forward(self, frames_tensor, mask_true):
         # [batch, length, height, width, channel] -> [batch, length, channel, height, width]
-        frames = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
+        #frames = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
         mask_true = mask_true.permute(0, 1, 4, 2, 3).contiguous()
 
         batch = frames.shape[0]
@@ -110,6 +110,6 @@ class RNN(nn.Module):
 
         decouple_loss = torch.mean(torch.stack(decouple_loss, dim=0))
         # [length, batch, channel, height, width] -> [batch, length, height, width, channel]
-        next_frames = torch.stack(next_frames, dim=0).permute(1, 0, 3, 4, 2).contiguous()
+        next_frames = torch.stack(next_frames, dim=0).permute(1, 0, 2, 3, 4).contiguous()
         loss = self.MSE_criterion(next_frames, frames_tensor[:, 1:]) + self.configs.decouple_beta * decouple_loss
         return next_frames, loss
